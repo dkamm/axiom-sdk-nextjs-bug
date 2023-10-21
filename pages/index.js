@@ -1,7 +1,68 @@
 import Head from 'next/head';
 import styles from '../styles/Home.module.css';
 
+import { Axiom } from "@axiom-crypto/core";
+import { ethers } from 'ethers';
+import { useEffect } from 'react';
+
+const providerUri = `https://goerli.infura.io/v3/${process.env.NEXT_PUBLIC_INFURA_KEY}`
+const config = {
+  providerUri,
+  version: "v1",
+  chainId: 5, // Goerli; defaults to 1 (Ethereum Mainnet)
+  mock: true, // builds proofs without utilizing actual Prover resources
+}
+const axiomClient = new Axiom(config);
+
+const checkStorageVerified = async (blockNumber, address, slot, value) => {
+  const qb = axiomClient.newQueryBuilder()
+  await qb.append({
+    blockNumber,
+    address,
+    slot,
+    value
+  });
+  const {keccakQueryResponse} = await qb.build();
+  const responseTree = await axiomClient.query.getResponseTreeForKeccakQueryResponse(
+    keccakQueryResponse
+  );
+  const keccakStorageResponse = responseTree.storageTree.getHexRoot();
+  const storageWitness = axiomClient.query.getValidationWitness(
+    responseTree,
+    blockNumber,
+    address,
+    slot,
+  );
+  const provider = new ethers.JsonRpcProvider(providerUri);
+  const axiomV1Query = new ethers.Contract(
+    axiomClient.getAxiomQueryAddress(), 
+    axiomClient.getAxiomQueryAbi(), 
+    provider
+  );
+  const responsesValid = await axiomV1Query.areResponsesValid(
+    null,
+    null,
+    keccakStorageResponse,
+    [],
+    [],
+    [storageWitness]
+  );
+  return responsesValid;
+}
+
 export default function Home() {
+
+  useEffect(() => {
+    const slot = 4 + 7;
+    const address = "0x03D842bDC4C06d3F095b13e2Aa48DBC629C2253C";
+    const blockNumber = 9902537;
+    const value = "0x5dec166a787077123691d26315519d1aa42d469408e1812f42c8cd6665f36975";
+    const checker = async () => {
+      console.log("storage verified?", await checkStorageVerified(blockNumber, address, slot, value));
+    }
+    checker(); 
+  }, [])
+
   return (
     <div className={styles.container}>
       <Head>
